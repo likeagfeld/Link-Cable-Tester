@@ -92,4 +92,4 @@ Settings are stored in `~/.dreamcast_cable_tester.json` and persist between sess
 ```bash
 pip install paramiko pygame pillow
 ```
-
+![DreamPi Link Cable Tester](Screenshot.png)
