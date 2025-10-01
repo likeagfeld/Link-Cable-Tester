@@ -10,7 +10,10 @@ import subprocess
 import threading
 import time
 import json
+import sys
+import os
 from pathlib import Path
+from PIL import Image, ImageTk
 
 # Try to import paramiko for SSH
 PARAMIKO_AVAILABLE = False
@@ -20,11 +23,40 @@ try:
 except ImportError:
     pass
 
+# Try to import pygame for audio
+PYGAME_AVAILABLE = False
+try:
+    import pygame
+    pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+    PYGAME_AVAILABLE = True
+except ImportError:
+    pass
+except Exception as e:
+    print(f"Pygame mixer init failed: {e}")
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
 class CableTesterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Dreamcast Cable Tester")
-        self.root.geometry("900x650")
+        self.root.geometry("900x750")
+        
+        # Set window icon if available
+        icon_path = resource_path("icon.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.root.iconbitmap(icon_path)
+            except:
+                pass
         
         self.config_file = Path.home() / ".dreamcast_cable_tester.json"
         
@@ -35,8 +67,26 @@ class CableTesterGUI:
         self.test_running = False
         self.scixb_detected = False
         
+        # Audio file paths - use resource_path for bundled files
+        self.success_audio = resource_path("success.mp3")
+        self.failure_audio = resource_path("failure.mp3")
+        
         self.create_widgets()
         self.load_config()
+        
+        # Verify audio files at startup
+        if PYGAME_AVAILABLE:
+            self.log_message("Pygame audio initialized", "info")
+            if os.path.exists(self.success_audio):
+                self.log_message(f"Found: {self.success_audio}", "info")
+            else:
+                self.log_message(f"Missing: {self.success_audio}", "warning")
+            if os.path.exists(self.failure_audio):
+                self.log_message(f"Found: {self.failure_audio}", "info")
+            else:
+                self.log_message(f"Missing: {self.failure_audio}", "warning")
+        else:
+            self.log_message("Pygame not available - audio disabled", "warning")
         
     def create_widgets(self):
         main_frame = ttk.Frame(self.root, padding="10")
@@ -45,11 +95,31 @@ class CableTesterGUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(4, weight=1)
+        main_frame.rowconfigure(5, weight=1)
+        
+        # Icon Display
+        icon_frame = ttk.Frame(main_frame)
+        icon_frame.grid(row=0, column=0, pady=10)
+        
+        icon_path = resource_path("icon.ico")
+        if os.path.exists(icon_path):
+            try:
+                # Load and display icon
+                img = Image.open(icon_path)
+                # Resize to a large display size (150x150)
+                img = img.resize((150, 150), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                
+                icon_label = ttk.Label(icon_frame, image=photo)
+                icon_label.image = photo  # Keep a reference
+                icon_label.pack()
+            except Exception as e:
+                # If icon fails to load, just skip it
+                pass
         
         # Connection Settings
         conn_frame = ttk.LabelFrame(main_frame, text="Raspberry Pi Connection", padding="10")
-        conn_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        conn_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
         conn_frame.columnconfigure(1, weight=1)
         
         ttk.Label(conn_frame, text="Pi IP Address:").grid(row=0, column=0, sticky=tk.W, padx=5)
@@ -72,7 +142,7 @@ class CableTesterGUI:
         
         # Cable Settings
         cable_frame = ttk.LabelFrame(main_frame, text="Cable Settings", padding="10")
-        cable_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        cable_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
         cable_frame.columnconfigure(1, weight=1)
         
         ttk.Label(cable_frame, text="Serial Port:").grid(row=0, column=0, sticky=tk.W, padx=5)
@@ -87,7 +157,7 @@ class CableTesterGUI:
         
         # Control Buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, pady=10)
+        button_frame.grid(row=3, column=0, pady=10)
         
         self.start_button = ttk.Button(button_frame, text="Start Test", command=self.start_test, width=15)
         self.start_button.grid(row=0, column=0, padx=5)
@@ -101,14 +171,14 @@ class CableTesterGUI:
         
         # Status
         status_frame = ttk.LabelFrame(main_frame, text="Test Status", padding="10")
-        status_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
+        status_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
         
         self.status_label = ttk.Label(status_frame, text="Ready to test", foreground="gray")
         self.status_label.pack()
         
         # Output Log
         log_frame = ttk.LabelFrame(main_frame, text="Test Output", padding="10")
-        log_frame.grid(row=4, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        log_frame.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         
@@ -121,6 +191,25 @@ class CableTesterGUI:
         self.log_text.tag_config("info", foreground="blue")
         self.log_text.tag_config("scixb", foreground="green", background="yellow", font=("TkDefaultFont", 11, "bold"))
         
+    def play_audio(self, audio_file):
+        """Play an audio file using pygame"""
+        if not PYGAME_AVAILABLE:
+            self.log_message("Pygame not available - audio disabled", "warning")
+            return
+            
+        if not os.path.exists(audio_file):
+            self.log_message(f"Audio file not found: {audio_file}", "warning")
+            return
+            
+        try:
+            # Stop any currently playing audio
+            pygame.mixer.music.stop()
+            pygame.mixer.music.load(audio_file)
+            pygame.mixer.music.play()
+            self.log_message(f"Playing audio: {os.path.basename(audio_file)}", "info")
+        except Exception as e:
+            self.log_message(f"Failed to play audio: {str(e)}", "warning")
+    
     def log_message(self, message, tag=None):
         timestamp = time.strftime("%H:%M:%S")
         formatted_msg = f"[{timestamp}] {message}\n"
@@ -198,6 +287,9 @@ class CableTesterGUI:
             self.log_message(f"Connecting to {pi_user}@{pi_ip}:{ssh_port}...", "info")
             
             if not self.connect_ssh(pi_ip, pi_user, pi_pass, ssh_port):
+                # Play failure sound
+                self.play_audio(self.failure_audio)
+                time.sleep(2)  # Give audio time to play
                 self.stop_test()
                 return
                 
@@ -278,6 +370,19 @@ except Exception as e:
                     self.log_message(f"  {line}", "info")
             
             self.log_message("", "info")
+            self.log_message("Clearing serial buffer and getting baseline...", "info")
+            time.sleep(2)
+            
+            # Get current file sizes to ignore any buffered/old data
+            stdin, stdout, stderr = self.ssh_client.exec_command('stat -c%s /tmp/serial_data.txt 2>/dev/null || echo 0')
+            serial_pos = int(stdout.read().decode().strip())
+            
+            stdin, stdout, stderr = self.ssh_client.exec_command('stat -c%s /tmp/link_output.log 2>/dev/null || echo 0')
+            link_pos = int(stdout.read().decode().strip())
+            
+            self.log_message(f"Starting fresh from position - Serial: {serial_pos}, Link: {link_pos}", "info")
+            
+            self.log_message("", "info")
             self.log_message("=" * 60, "success")
             self.log_message("MONITORING FOR DATA", "success")
             self.log_message("=" * 60, "success")
@@ -288,8 +393,6 @@ except Exception as e:
             # Monitor BOTH files
             start_time = time.time()
             timeout = 120
-            serial_pos = 0
-            link_pos = 0
             
             while not self.stop_flag.is_set() and (time.time() - start_time) < timeout:
                 # Check serial data file
@@ -325,6 +428,9 @@ except Exception as e:
                     self.log_message(">>> CABLE WORKS! <<<", "scixb")
                     self.log_message("=" * 60, "scixb")
                     
+                    # Play success sound
+                    self.play_audio(self.success_audio)
+                    
                     self.root.after(0, lambda: messagebox.showinfo("SUCCESS!", "Cable is working!"))
                     time.sleep(2)
                     self.stop_test()
@@ -336,8 +442,15 @@ except Exception as e:
                 self.log_message("", "error")
                 self.log_message("TIMEOUT - No data detected", "error")
                 
+                # Play failure sound
+                self.play_audio(self.failure_audio)
+                time.sleep(2)  # Give audio time to play
+                
         except Exception as e:
             self.log_message(f"Error: {str(e)}", "error")
+            # Play failure sound on exception
+            self.play_audio(self.failure_audio)
+            time.sleep(2)  # Give audio time to play
         finally:
             if not self.stop_flag.is_set():
                 self.stop_test()

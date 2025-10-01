@@ -1,1 +1,1 @@
-python -m PyInstaller --onefile --windowed --name="DreamcastCableTester" cable_tester.py
+python -m PyInstaller --onefile --windowed --name="DreamcastCableTester" --icon=icon.ico --add-data="icon.ico;." --add-data="success.mp3;." --add-data="failure.mp3;." cable_tester.py
