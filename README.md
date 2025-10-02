@@ -22,6 +22,12 @@ GUI application for testing Dreamcast serial cables via SSH connection to a Rasp
 - Python 3.7 or higher
 - SSH access to Raspberry Pi
 - Compatible game (VOOT)
+- DreamCast Taisen Netplay: https://github.com/eaudunord/dc-taisen-netplay
+
+More info about Taisen Netplay:
+https://www.segasaturnshiro.com/2025/09/18/taisen-netplay-brings-new-ways-to-play-your-dreamcast-online/
+
+## Thanks to eaudunord for creating the underlying DreamPi Link Cable system!!
 
 **Python packages:**
 ```bash
