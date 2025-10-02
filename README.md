@@ -15,7 +15,7 @@ GUI application for testing Dreamcast serial cables via SSH connection to a Rasp
 ## Requirements
 
 **Hardware:**
-- Dreamcast with serial cable
+- Dreamcast with CP2102N based USB Coders Cable (Dreamcast serial -> USB)
 - Raspberry Pi with cable connected
 
 **Software:**
